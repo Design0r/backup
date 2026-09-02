@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use chrono::Local;
-use dircpy::copy_dir;
+use dircpy;
 
 static BACKUPS: &'static [(&str, &str)] = &[(
     r"\\apicnas\Produktion\Pipeline\Apic Studio\apic_studio.db",
@@ -15,7 +15,7 @@ static BACKUPS: &'static [(&str, &str)] = &[(
 
 fn create_backup(src: &Path, dst: &Path) -> Result<()> {
     if src.is_dir() {
-        copy_dir(src, dst)?;
+        dircpy::copy_dir(src, dst)?;
     } else {
         fs::copy(src, dst)?;
     }
@@ -38,21 +38,24 @@ fn delete_duplicates(path: &Path) -> Result<()> {
     let mut map = HashMap::<String, Vec<PathBuf>>::new();
     fs::read_dir(path)?.filter_map(|e| e.ok()).for_each(|e| {
         let path = e.path();
-        let hash = get_file_hash(&path).unwrap();
-
-        if map.contains_key(&hash) {
-            let buf = map.get_mut(&hash).unwrap();
-            buf.push(path);
-        } else {
-            let v = vec![path];
-            map.insert(hash, v);
+        match get_file_hash(&path) {
+            Ok(hash) => match map.get_mut(&hash) {
+                Some(buf) => buf.push(path),
+                None => {
+                    map.insert(hash, vec![path]);
+                }
+            },
+            Err(e) => eprintln!("failed to hash file {path:?}: {e}"),
         }
     });
 
     for (_, v) in map {
         for dupe in &v[1..] {
             println!("removing {dupe:?} as duplicate from {:?}", &v[0]);
-            fs::remove_file(&dupe)?;
+
+            if let Err(e) = fs::remove_file(&dupe) {
+                eprintln!("failed to remove file {path:?}: {e}");
+            }
         }
     }
 
@@ -67,9 +70,12 @@ fn main() {
         .enumerate()
         .for_each(|(i, (a, b))| {
             println!("creating backup {}/{}: {b:?}", i + 1, BACKUPS.len());
-            create_backup(&a, &b)
-                .map_err(|e| format!("failed to create backup: {e}"))
-                .unwrap();
+
+            if let Err(e) = create_backup(&a, &b) {
+                eprintln!("failed to create backup: {e}");
+                return;
+            }
+
             println!("finished backup {}/{}: {b:?}", i + 1, BACKUPS.len());
         });
 
