@@ -8,12 +8,24 @@ use anyhow::Result;
 use chrono::Local;
 use dircpy;
 
-static BACKUPS: &'static [(&str, &str)] = &[(
-    r"\\apicnas\Produktion\Pipeline\Apic Studio\apic_studio.db",
-    r"\\apicnas\Produktion\Pipeline\Apic Studio\db\apic_studio_{DATE}.db",
-)];
+static BACKUPS: &'static [(&str, &str)] = &[
+    (
+        r"\\apicnas\Produktion\Pipeline\Apic Studio\apic_studio.db",
+        r"\\apicnas\Produktion\Pipeline\Apic Studio\db_backups\apic_studio_{DATE}.db",
+    ),
+    (
+        r"\\apicnas\Produktion\Pipeline\Tracey\tracey.db",
+        r"\\apicnas\Produktion\Pipeline\Tracey\db_backups\tracey_{DATE}.db",
+    ),
+];
 
 fn create_backup(src: &Path, dst: &Path) -> Result<()> {
+    if let Some(dst_folder) = dst.parent() {
+        if !dst_folder.exists() {
+            fs::create_dir_all(dst_folder)?;
+        }
+    }
+
     if src.is_dir() {
         dircpy::copy_dir(src, dst)?;
     } else {
@@ -79,6 +91,11 @@ fn main() {
             println!("finished backup {}/{}: {b:?}", i + 1, BACKUPS.len());
         });
 
-    let p = PathBuf::from(r"\\apicnas\Produktion\Pipeline\Apic Studio\db\");
-    let _ = delete_duplicates(&p);
+    let p: Vec<PathBuf> = vec![
+        (r"\\apicnas\Produktion\Pipeline\Apic Studio\db_backups\").into(),
+        (r"\\apicnas\Produktion\Pipeline\Tracey\db_backups\").into(),
+    ];
+    p.iter().for_each(|path| {
+        let _ = delete_duplicates(path);
+    });
 }
